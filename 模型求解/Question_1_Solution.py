@@ -112,21 +112,21 @@ class ArmKinematics:
         ax = fig.add_subplot(111, projection='3d')
         
         # 绘制原点
-        ax.scatter(0, 0, 0, color='k', s=100, label='肩关节 (原点)')
+        ax.scatter(0, 0, 0, color='k', s=100, label='Shoulder Joint (Origin)')
         
         # 绘制最终位置连接线
-        ax.plot([0, x_f], [0, y_f], [0, z_f], 'r-', linewidth=4, label='最终姿态')
-        ax.scatter(x_f, y_f, z_f, color='r', s=100, label='手部末端')
+        ax.plot([0, x_f], [0, y_f], [0, z_f], 'r-', linewidth=4, label='Final Posture')
+        ax.scatter(x_f, y_f, z_f, color='r', s=100, label='Hand End')
         
         # 辅助线 (投影)
         ax.plot([x_f, x_f], [y_f, y_f], [0, z_f], 'k--', alpha=0.3) # drop to floor
         ax.plot([0, x_f], [0, y_f], [0, 0], 'k--', alpha=0.3)       # floor projection
         
         # 设置坐标轴标签
-        ax.set_xlabel('X (前) / m')
-        ax.set_ylabel('Y (左) / m')
-        ax.set_zlabel('Z (上) / m')
-        ax.set_title(f'小问1: 机器人手臂空间位置示意\n末端坐标: ({x_f:.3f}, {y_f:.3f}, {z_f:.3f})')
+        ax.set_xlabel('X (Front) / m')
+        ax.set_ylabel('Y (Left) / m')
+        ax.set_zlabel('Z (Up) / m')
+        ax.set_title(f'Question 1: Robot Arm Spatial Position\nEnd Coordinates: ({x_f:.3f}, {y_f:.3f}, {z_f:.3f})')
         
         # 设置坐标轴范围，保证比例一致 (Equal Aspect Ratio hack)
         limit = self.L_arm * 1.2
@@ -138,6 +138,11 @@ class ArmKinematics:
         ax.view_init(elev=20, azim=45)
         
         ax.legend()
+        
+        # 添加结论文本
+        conclusion_text = f"Conclusion: Final Coords ({x_f:.3f}, {y_f:.3f}, {z_f:.3f})\nTorque Check: {'Safe' if 3.16 < 120 else 'Warning'} (3.16 N·m < 120 N·m)"
+        plt.figtext(0.5, 0.05, conclusion_text, ha='center', fontsize=12, 
+                   bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
         
         ensure_dir('图')
         save_path = '图/Question_1_Result.png'

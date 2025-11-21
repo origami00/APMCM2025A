@@ -249,6 +249,12 @@ class NSGA2_Optimizer:
         plt.grid(True)
         plt.legend()
         
+        # 添加结论文本
+        conclusion_text = f"Conclusion: Recommended (Knee Point) - Time {knee_point[1]:.2f}s, Energy {knee_point[0]:.2f}J.\nTrade-off between efficiency and energy (Pareto Optimal)."
+        plt.figtext(0.5, 0.02, conclusion_text, ha='center', fontsize=12, 
+                   bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
+        plt.subplots_adjust(bottom=0.15)
+        
         ensure_dir('图')
         save_path = '图/Question_4_Result.png'
         plt.savefig(save_path, dpi=300)

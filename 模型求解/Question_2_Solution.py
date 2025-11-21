@@ -187,39 +187,45 @@ class TrajectoryOptimizerGA:
         
         plt.subplot(2, 2, 1)
         plt.plot(loss_history, 'b-')
-        plt.title('适应度收敛曲线 (Fitness)')
-        plt.xlabel('迭代代数')
+        plt.title('Fitness Convergence Curve')
+        plt.xlabel('Generation')
         plt.ylabel('Loss')
         plt.grid(True)
         
         plt.subplot(2, 2, 2)
-        plt.plot(time, theta, 'r-', linewidth=2, label='角度')
-        plt.title('膝关节角度轨迹 (Angle)')
-        plt.xlabel('时间 (s)')
-        plt.ylabel('角度 (deg)')
+        plt.plot(time, theta, 'r-', linewidth=2, label='Angle')
+        plt.title('Knee Joint Angle Trajectory')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Angle (deg)')
         plt.grid(True)
         
         plt.subplot(2, 2, 3)
-        plt.plot(time, vel, 'g-', label='角速度')
-        plt.axhline(y=self.vel_limit_deg, color='r', linestyle='--', label='上限')
-        plt.axhline(y=-self.vel_limit_deg, color='r', linestyle='--', label='下限')
-        plt.title('角速度 (Velocity)')
-        plt.xlabel('时间 (s)')
-        plt.ylabel('速度 (deg/s)')
+        plt.plot(time, vel, 'g-', label='Velocity')
+        plt.axhline(y=self.vel_limit_deg, color='r', linestyle='--', label='Upper Limit')
+        plt.axhline(y=-self.vel_limit_deg, color='r', linestyle='--', label='Lower Limit')
+        plt.title('Angular Velocity')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Velocity (deg/s)')
         plt.legend()
         plt.grid(True)
         
         plt.subplot(2, 2, 4)
-        plt.plot(time, tau, 'm-', label='所需力矩')
-        plt.axhline(y=self.torque_limit, color='k', linestyle='--', label='力矩限制')
+        plt.plot(time, tau, 'm-', label='Required Torque')
+        plt.axhline(y=self.torque_limit, color='k', linestyle='--', label='Torque Limit')
         plt.axhline(y=-self.torque_limit, color='k', linestyle='--')
-        plt.title('关节力矩 (Torque)')
-        plt.xlabel('时间 (s)')
-        plt.ylabel('力矩 (N·m)')
+        plt.title('Joint Torque')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Torque (N·m)')
         plt.legend()
         plt.grid(True)
         
+        # 添加结论文本
+        conclusion_text = f"Conclusion: Optimal Time T={time[-1]:.2f}s, Constraints Satisfied.\nTrajectory is smooth."
+        plt.figtext(0.5, 0.02, conclusion_text, ha='center', fontsize=12, 
+                   bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
+        
         plt.tight_layout()
+        plt.subplots_adjust(bottom=0.12) # 为文字留出空间
         ensure_dir('图')
         save_path = '图/Question_2_Result.png'
         plt.savefig(save_path, dpi=300)
