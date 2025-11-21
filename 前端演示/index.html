@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机器人模型 3D 演示与结果可视化 (APMCM 2025 A)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; overflow: hidden; }
+        #header {
+            height: 60px; background-color: #2c3e50; color: white; display: flex; align-items: center; padding: 0 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        #header h1 { font-size: 20px; margin: 0; flex-grow: 1; }
+        .tabs { display: flex; }
+        .tab {
+            padding: 10px 20px; cursor: pointer; border-radius: 4px 4px 0 0; margin-left: 5px; background: #34495e; transition: background 0.3s;
+        }
+        .tab:hover { background: #3e5871; }
+        .tab.active { background: #f0f2f5; color: #2c3e50; font-weight: bold; }
+        
+        .content-area { display: flex; height: calc(100vh - 60px); }
+        .sidebar { width: 320px; background: white; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); overflow-y: auto; display: flex; flex-direction: column; }
+        .main-view { flex-grow: 1; position: relative; }
+        
+        .panel { display: none; flex-grow: 1; }
+        .panel.active { display: block; }
+        
+        #canvas-container { width: 100%; height: 100%; background: #e0e0e0; }
+        
+        .info-card { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .info-card h3 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; font-size: 16px; }
+        .metric { display: flex; justify-content: space-between; margin: 8px 0; }
+        .metric label { color: #7f8c8d; }
+        .metric span { font-weight: bold; color: #2c3e50; }
+        
+        .chart-container { height: 200px; margin-top: 20px; }
+        
+        .control-group { margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
+        .control-group label { display: block; margin-bottom: 5px; color: #555; font-weight: bold; }
+        .slider-container { display: flex; align-items: center; }
+        .slider-container input { flex-grow: 1; margin-right: 10px; }
+        .btn { padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+        .btn:hover { background: #2980b9; }
+        .btn-group { display: flex; gap: 10px; }
+        .btn-group .btn { width: 50%; }
+
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; color: #666; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <h1>APMCM 2025 Problem A - Robot Visualization Demo</h1>
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('q1')">Question 1</div>
+        <div class="tab" onclick="switchTab('q2')">Question 2</div>
+        <div class="tab" onclick="switchTab('q3')">Question 3</div>
+        <div class="tab" onclick="switchTab('q4')">Question 4</div>
+    </div>
+</div>
+
+<div class="content-area">
+    <div class="sidebar" id="sidebar">
+        
+        <!-- Q1 Info -->
+        <div id="info-q1" class="panel active">
+            <div class="info-card">
+                <h3>Q1: Kinematics Animation</h3>
+                <p>Simulate left arm extension (60°) and rotation (30°).</p>
+                <div class="metric"><label>Current Ext:</label> <span id="q1-cur-ext">0.0°</span></div>
+                <div class="metric"><label>Current Rot:</label> <span id="q1-cur-rot">0.0°</span></div>
+            </div>
+            <div class="info-card">
+                <h3>Final Coordinates (Left Hand)</h3>
+                <div class="metric"><label>X:</label> <span id="q1-x">0.000</span></div>
+                <div class="metric"><label>Y:</label> <span id="q1-y">0.000</span></div>
+                <div class="metric"><label>Z:</label> <span id="q1-z">0.000</span></div>
+            </div>
+            <div class="control-group">
+                <label>Playback Speed: <span id="q1-speed-val">1.0x</span></label>
+                <div class="slider-container">
+                    <input type="range" min="0.1" max="3.0" step="0.1" value="1.0" oninput="setSpeed(this.value, 'q1')">
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="togglePlay()">⏯ Play/Pause</button>
+                    <button class="btn" onclick="toggleReverse()">⇄ Reverse</button>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="resetQ1()">⏮ Reset</button>
+                    <button class="btn" onclick="cycleCamera()">📷 Switch View</button>
+                </div>
+                <p id="q1-cam-name" style="text-align:center; font-size:12px; color:#7f8c8d; margin-top:5px;">Camera: Default</p>
+            </div>
+        </div>
+
+        <!-- Q2 Info -->
+        <div id="info-q2" class="panel">
+            <div class="info-card">
+                <h3>Q2: Trajectory Optimization</h3>
+                <p>Optimal knee joint trajectory (Right Leg).</p>
+                <div class="metric"><label>Time:</label> <span><span id="q2-time-display">0.00</span> / 5.00 s</span></div>
+                <div class="metric"><label>Velocity:</label> <span id="q2-vel">0.0</span> deg/s</div>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-q2"></canvas>
+            </div>
+            <div class="control-group">
+                <label>Playback Speed: <span id="q2-speed-val">1.0x</span></label>
+                <div class="slider-container">
+                    <input type="range" min="0.1" max="3.0" step="0.1" value="1.0" oninput="setSpeed(this.value, 'q2')">
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="togglePlay()">⏯ Play/Pause</button>
+                    <button class="btn" onclick="toggleReverse()">⇄ Reverse</button>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="resetQ2()">⏮ Reset</button>
+                    <button class="btn" onclick="cycleCamera()">📷 Switch View</button>
+                </div>
+                <p id="q2-cam-name" style="text-align:center; font-size:12px; color:#7f8c8d; margin-top:5px;">Camera: Default</p>
+            </div>
+        </div>
+
+        <!-- Q3 Info -->
+        <div id="info-q3" class="panel">
+            <div class="info-card">
+                <h3>Q3: Collaborative Control</h3>
+                <p>Body Turn & Left Arm Circle.</p>
+                <div class="metric"><label>Body Yaw:</label> <span id="q3-yaw">0.0°</span></div>
+                <div class="metric"><label>Arm Phase:</label> <span id="q3-phase">0%</span></div>
+            </div>
+             <div class="chart-container">
+                <canvas id="chart-q3"></canvas>
+            </div>
+            <div class="control-group">
+                <label>Playback Speed: <span id="q3-speed-val">1.0x</span></label>
+                <div class="slider-container">
+                    <input type="range" min="0.1" max="3.0" step="0.1" value="1.0" oninput="setSpeed(this.value, 'q3')">
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="togglePlay()">⏯ Play/Pause</button>
+                    <button class="btn" onclick="toggleReverse()">⇄ Reverse</button>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="resetQ3()">⏮ Reset</button>
+                    <button class="btn" onclick="cycleCamera()">📷 Switch View</button>
+                </div>
+                <p id="q3-cam-name" style="text-align:center; font-size:12px; color:#7f8c8d; margin-top:5px;">Camera: Default</p>
+            </div>
+        </div>
+
+        <!-- Q4 Info -->
+        <div id="info-q4" class="panel">
+            <div class="info-card">
+                <h3>Q4: Multi-objective Optimization</h3>
+                <p>3D Pareto Front Visualization.</p>
+                <div class="metric"><label>Selected Time:</label> <span id="q4-time">5.13 s</span></div>
+                <div class="metric"><label>Selected Energy:</label> <span id="q4-energy">337.8 J</span></div>
+            </div>
+            <div class="control-group">
+                <label>Preference Weight (Time vs Energy)</label>
+                <div class="slider-container">
+                    <span style="font-size:12px; margin-right:5px;">Time</span>
+                    <input type="range" min="0" max="100" value="50" oninput="updateQ4Preference(this.value)">
+                    <span style="font-size:12px; margin-left:5px;">Energy</span>
+                </div>
+            </div>
+            <div class="chart-container" style="height: 250px;">
+                <canvas id="chart-q4"></canvas>
+            </div>
+        </div>
+        
+    </div>
+
+    <div class="main-view">
+        <div id="canvas-container"></div>
+        <div id="loading">Loading Data...</div>
+    </div>
+</div>
+
+<script>
+let scene, camera, renderer, controls;
+let currentTab = 'q1';
+let vizData = null;
+let clock = new THREE.Clock();
+
+// Global State
+let isPlaying = true;
+let isReverse = false;
+let playbackSpeed = 1.0;
+let q4EffectMode = 0;
+
+// Camera State
+const camViews = {
+    q1: [
+        {pos: [2, 2, 2], look: [0, 0.5, 0], name: "Default (Iso)"},
+        {pos: [0, 3, 0], look: [0, 0, 0], name: "Top View"},
+        {pos: [2, 0.5, 0], look: [0, 0.5, 0], name: "Side View"}
+    ],
+    q2: [
+        {pos: [2, 1.5, 2], look: [0, 1, 0], name: "Default (Iso)"},
+        {pos: [3, 1, 0], look: [0, 1, 0], name: "Side View"},
+        {pos: [0, 1, 3], look: [0, 1, 0], name: "Front View"}
+    ],
+    q3: [
+        {pos: [3, 2.5, 4], look: [0, 0.5, 0], name: "Default (Iso)"},
+        {pos: [0, 4, 0], look: [0, 0, 0], name: "Top View"},
+        {pos: [0, 1, 3], look: [0, 0.5, 0], name: "Front View"}
+    ]
+};
+let currentCamIdx = 0;
+
+// Materials
+const matBody = new THREE.MeshStandardMaterial({ color: 0xbdc3c7, roughness: 0.3, metalness: 0.4 });
+const matDark = new THREE.MeshStandardMaterial({ color: 0x2c3e50, roughness: 0.7, metalness: 0.1 });
+const matJoint = new THREE.MeshStandardMaterial({ color: 0x34495e, roughness: 0.5, metalness: 0.5 });
+const matAccent = new THREE.MeshStandardMaterial({ color: 0x3498db, roughness: 0.2, metalness: 0.6, emissive: 0x3498db, emissiveIntensity: 0.1 });
+const matHighlight = new THREE.MeshStandardMaterial({ color: 0xe74c3c, roughness: 0.2, metalness: 0.5 });
+const matPareto = new THREE.MeshStandardMaterial({ color: 0xe74c3c, emissive: 0xe74c3c, emissiveIntensity: 0.5 });
+const matSelected = new THREE.MeshStandardMaterial({ color: 0x3498db, emissive: 0x3498db, emissiveIntensity: 0.8 });
+
+// Animation Vars
+let q1AnimTime = 0, q1Duration = 2.0;
+let q2AnimTime = 0;
+let q3AnimTime = 0;
+
+// Robot References
+let robotQ1 = { leftArm: null, shoulderYaw: null, shoulderPitch: null };
+let robotQ2 = { rightLeg: null, rightKneeGroup: null };
+let robotQ3 = { group: null, leftArmGroup: null };
+let q4Group, q4SelectedMesh;
+
+// Charts
+let chartQ2, chartQ3, chartQ4;
+
+function init3D() {
+    const container = document.getElementById('canvas-container');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xeef2f3);
+    scene.fog = new THREE.Fog(0xeef2f3, 10, 50);
+
+    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+    
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(5, 10, 7);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    scene.add(dirLight);
+    
+    const backLight = new THREE.DirectionalLight(0xaaccff, 0.4);
+    backLight.position.set(-5, 5, -5);
+    scene.add(backLight);
+
+    // Floor
+    const grid = new THREE.GridHelper(20, 20, 0xbdc3c7, 0xe0e0e0);
+    scene.add(grid);
+    
+    const planeGeo = new THREE.PlaneGeometry(20, 20);
+    const planeMat = new THREE.ShadowMaterial({ opacity: 0.05 });
+    const plane = new THREE.Mesh(planeGeo, planeMat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.receiveShadow = true;
+    scene.add(plane);
+
+    window.addEventListener('resize', onWindowResize, false);
+}
+
+function onWindowResize() {
+    const container = document.getElementById('canvas-container');
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+}
+
+fetch('visualization_data.json')
+    .then(response => response.json())
+    .then(data => {
+        vizData = data;
+        document.getElementById('loading').style.display = 'none';
+        setupQ1();
+        setupCharts();
+        animate();
+    });
+
+window.switchTab = function(tabId) {
+    currentTab = tabId;
+    // UI Update
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab')[['q1','q2','q3','q4'].indexOf(tabId)].classList.add('active');
+    document.querySelectorAll('.sidebar .panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('info-' + tabId).classList.add('active');
+
+    clearScene();
+    
+    // Reset State
+    isPlaying = true;
+    isReverse = false;
+    playbackSpeed = 1.0;
+    currentCamIdx = 0;
+    
+    // Reset Sliders and Labels
+    document.querySelectorAll('input[type=range]').forEach(i => {
+        if(i.getAttribute('oninput') && i.getAttribute('oninput').includes('setSpeed')) {
+            i.value = 1.0;
+        }
+    });
+    ['q1','q2','q3'].forEach(id => {
+        const el = document.getElementById(id + '-speed-val');
+        if(el) el.innerText = "1.0x";
+    });
+
+    if(camViews[tabId]) updateCamera(0);
+    else {
+        // Default for Q4
+        camera.position.set(6, 4, 8);
+        camera.lookAt(4, 2, 0);
+        controls.target.set(4, 2, 0);
+    }
+    
+    if(tabId === 'q1') setupQ1();
+    else if(tabId === 'q2') setupQ2();
+    else if(tabId === 'q3') setupQ3();
+    else if(tabId === 'q4') setupQ4();
+}
+
+function clearScene() {
+    const toRemove = [];
+    scene.children.forEach(child => {
+        if (child.name.startsWith('viz_')) toRemove.push(child);
+        if (child.type === 'AxesHelper') toRemove.push(child);
+    });
+    toRemove.forEach(c => scene.remove(c));
+}
+
+function updateCamera(idx) {
+    if(!camViews[currentTab]) return;
+    const view = camViews[currentTab][idx];
+    if(view) {
+        camera.position.set(...view.pos);
+        camera.lookAt(...view.look);
+        if(controls) controls.target.set(...view.look);
+        const el = document.getElementById(currentTab + '-cam-name');
+        if(el) el.innerText = "Camera: " + view.name;
+    }
+}
+
+window.cycleCamera = function() {
+    if(!camViews[currentTab]) return;
+    currentCamIdx = (currentCamIdx + 1) % camViews[currentTab].length;
+    updateCamera(currentCamIdx);
+}
+
+// --- Robot Builder Helper ---
+function buildCompleteRobot(highlightPart = null) {
+    const robotGroup = new THREE.Group();
+    
+    // Torso
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.45, 0.2), matBody);
+    torso.position.y = 0.45 + 0.4; // Legs ~0.4 + Hips
+    torso.castShadow = true;
+    robotGroup.add(torso);
+    
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.15, 0.22), matDark);
+    chest.position.y = 0.45 + 0.4 + 0.1;
+    chest.castShadow = true;
+    robotGroup.add(chest);
+    
+    // Head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), matBody);
+    head.position.y = 0.45 + 0.4 + 0.3;
+    head.castShadow = true;
+    robotGroup.add(head);
+    
+    const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.16), matAccent);
+    eyes.position.y = 0.45 + 0.4 + 0.3;
+    head.add(eyes);
+
+    // Arms Helper
+    function createArm(side) { // 1 for left, -1 for right
+        const armGroup = new THREE.Group();
+        armGroup.position.set(side * 0.22, 0.45 + 0.4 + 0.15, 0); // Shoulder pos
+        
+        // Shoulder Joint
+        const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.06), matJoint);
+        armGroup.add(shoulder);
+        
+        // Upper Arm
+        const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.25, 0.06), matBody);
+        upperArm.position.y = -0.15;
+        armGroup.add(upperArm);
+        
+        // Elbow
+        const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.05), matJoint);
+        elbow.position.y = -0.3;
+        armGroup.add(elbow);
+        
+        // Forearm
+        const foreArm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.25, 0.05), matBody);
+        foreArm.position.y = -0.45;
+        armGroup.add(foreArm);
+        
+        // Hand
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.06), matDark);
+        hand.position.y = -0.6;
+        armGroup.add(hand);
+        
+        return { group: armGroup, shoulder: shoulder, upperArm: upperArm, elbow: elbow, foreArm: foreArm, hand: hand };
+    }
+    
+    // Legs Helper
+    function createLeg(side) {
+        const legGroup = new THREE.Group();
+        legGroup.position.set(side * 0.1, 0.4, 0); // Hip pos
+        
+        // Hip Joint
+        const hip = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12), matJoint);
+        hip.rotation.z = Math.PI / 2;
+        legGroup.add(hip);
+        
+        // Thigh
+        const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.08), matBody);
+        thigh.position.y = -0.2;
+        legGroup.add(thigh);
+        
+        // Knee Group (Rotation Point)
+        const kneeGroup = new THREE.Group();
+        kneeGroup.position.y = -0.4;
+        legGroup.add(kneeGroup);
+        
+        // Knee Joint
+        const knee = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.1), matJoint);
+        knee.rotation.z = Math.PI / 2;
+        kneeGroup.add(knee);
+        
+        // Shin
+        const shin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.35, 0.06), matBody);
+        shin.position.y = -0.2;
+        kneeGroup.add(shin);
+        
+        // Foot
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.15), matDark);
+        foot.position.set(0, -0.4, 0.03);
+        kneeGroup.add(foot);
+        
+        return { group: legGroup, kneeGroup: kneeGroup };
+    }
+
+    const leftArm = createArm(1);
+    const rightArm = createArm(-1);
+    const leftLeg = createLeg(1);
+    const rightLeg = createLeg(-1);
+    
+    robotGroup.add(leftArm.group);
+    robotGroup.add(rightArm.group);
+    robotGroup.add(leftLeg.group);
+    robotGroup.add(rightLeg.group);
+    
+    // Highlight logic if needed
+    if(highlightPart === 'leftArm') {
+        leftArm.upperArm.material = matHighlight;
+        leftArm.foreArm.material = matHighlight;
+    }
+    if(highlightPart === 'rightLeg') {
+        rightLeg.kneeGroup.children[1].material = matHighlight; // Shin
+    }
+
+    return { 
+        root: robotGroup, 
+        leftArm: leftArm, 
+        rightArm: rightArm, 
+        leftLeg: leftLeg, 
+        rightLeg: rightLeg 
+    };
+}
+
+// --- Q1 Setup ---
+function setupQ1() {
+    q1AnimTime = 0;
+    const fullRobot = buildCompleteRobot('leftArm'); // Problem asks for Left Hand
+    q1Group = fullRobot.root;
+    q1Group.name = "viz_q1_robot";
+    scene.add(q1Group);
+    
+    // Setup Q1 specific kinematics structure on Left Arm
+    // Re-rig left arm for precise rigid rotation
+    robotQ1.shoulderYaw = fullRobot.leftArm.group;
+    
+    // Create a dedicated Pitch Pivot at the center of the shoulder joint
+    robotQ1.shoulderPitch = new THREE.Group();
+    // Shoulder joint sphere is at (0,0,0) inside arm group.
+    robotQ1.shoulderYaw.add(robotQ1.shoulderPitch);
+    
+    // Align parts to form a straight rigid arm extending downwards from pivot
+    const la = fullRobot.leftArm;
+    
+    // 1. Move parts into pitch group
+    robotQ1.shoulderPitch.add(la.upperArm);
+    robotQ1.shoulderPitch.add(la.elbow);
+    robotQ1.shoulderPitch.add(la.foreArm);
+    robotQ1.shoulderPitch.add(la.hand);
+    
+    // 2. Refine positions for seamless look (Straight downwards -Y)
+    // Shoulder Pivot is at 0.
+    // Upper Arm (Length 0.25). Center at -0.125.
+    la.upperArm.position.set(0, -0.125, 0);
+    
+    // Elbow (Radius 0.05). Center at -0.25.
+    la.elbow.position.set(0, -0.25, 0);
+    la.elbow.visible = true; // Keep visible for joint detail
+    
+    // Forearm (Length 0.25). Center at -0.25 (elbow) - 0.125 = -0.375.
+    la.foreArm.position.set(0, -0.375, 0);
+    
+    // Hand (Length 0.08). Start at -0.5. Center at -0.54.
+    la.hand.position.set(0, -0.54, 0);
+    
+    // Visual Trajectory Line
+    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+    q1Line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xe74c3c, linewidth: 3 }));
+    q1Line.name = "viz_q1_line";
+    scene.add(q1Line);
+    
+    q1EndMesh = new THREE.Mesh(new THREE.SphereGeometry(0.03), matHighlight);
+    q1EndMesh.name = "viz_q1_marker";
+    scene.add(q1EndMesh);
+    
+    updateQ1Visuals(0, 0);
+}
+
+// --- Q2 Setup ---
+function setupQ2() {
+    q2AnimTime = 0;
+    const fullRobot = buildCompleteRobot('rightLeg');
+    q2LegGroup = fullRobot.root;
+    q2LegGroup.name = "viz_q2_robot";
+    scene.add(q2LegGroup);
+    
+    robotQ2.rightKneeGroup = fullRobot.rightLeg.kneeGroup;
+    // Lift leg slightly
+    fullRobot.rightLeg.group.rotation.x = -0.2;
+}
+
+// --- Q3 Setup ---
+function setupQ3() {
+    q3AnimTime = 0;
+    const fullRobot = buildCompleteRobot('leftArm');
+    q3RobotGroup = fullRobot.root;
+    q3RobotGroup.name = "viz_q3_robot";
+    scene.add(q3RobotGroup);
+    
+    robotQ3.group = q3RobotGroup;
+    robotQ3.leftArmGroup = fullRobot.leftArm.group;
+    
+    // Rig Left Arm for pointing
+    // We will rotate the whole arm group to point
+}
+
+// --- Q4 Setup ---
+function setupQ4() {
+    q4Group = new THREE.Group();
+    q4Group.name = "viz_q4_root";
+    scene.add(q4Group);
+    
+    // Static Scene (Trophy Style from Previous Version)
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.2, 6), matJoint);
+    base.receiveShadow = true;
+    q4Group.add(base);
+    
+    const torus = new THREE.Mesh(new THREE.TorusKnotGeometry(0.4, 0.1, 128, 32), matHighlight);
+    torus.position.y = 0.8;
+    torus.castShadow = true;
+    q4Group.add(torus);
+    
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.02, 16, 100), matAccent);
+    ring.position.y = 0.8;
+    ring.rotation.x = Math.PI / 2;
+    q4Group.add(ring);
+    
+    // Particles
+    for(let i=0; i<20; i++) {
+        const p = new THREE.Mesh(new THREE.SphereGeometry(0.02), matHighlight);
+        p.position.set((Math.random()-0.5)*2, (Math.random())*2, (Math.random()-0.5)*2);
+        q4Group.add(p);
+    }
+    
+    updateQ4Visuals();
+}
+
+// Animation Control Logic
+function updateAnimationState(animTime, duration, dt) {
+    if(!isPlaying) return animTime; // Paused
+    
+    if(!isReverse) {
+        animTime += dt;
+        if(animTime >= duration) animTime = duration; // Clamp at end
+    } else {
+        animTime -= dt;
+        if(animTime <= 0) animTime = 0; // Clamp at start
+    }
+    return animTime;
+}
+
+function updateQ1() {
+    const dt = clock.getDelta() * playbackSpeed;
+    q1AnimTime = updateAnimationState(q1AnimTime, q1Duration, dt);
+    
+    let progress = q1AnimTime / q1Duration;
+    // Smoothstep easing for smoother motion
+    progress = progress * progress * (3 - 2 * progress);
+    
+    const data = vizData.q1;
+    updateQ1Visuals(progress * data.theta_ext, progress * data.theta_rot);
+}
+
+function updateQ1Visuals(ext, rot) {
+    // Left Arm Kinematics
+    // Yaw around Y axis (Vertical) - Standard robot frame
+    robotQ1.shoulderYaw.rotation.y = THREE.Math.degToRad(rot);
+    
+    // Pitch around X axis (Lateral) -> Lift arm
+    // Initial arm is down (-Y). 
+    // Rotate -X direction to lift.
+    robotQ1.shoulderPitch.rotation.x = THREE.Math.degToRad(-ext);
+    
+    // Calculate Visual Marker Position
+    // Total visual arm length from pivot to hand tip
+    // Pivot(0) -> HandCenter(-0.54) -> HandTip ~ -0.58
+    const visualArmLen = 0.58;
+    
+    const handOffset = new THREE.Vector3(0, -visualArmLen, 0);
+    handOffset.applyAxisAngle(new THREE.Vector3(1,0,0), THREE.Math.degToRad(-ext));
+    handOffset.applyAxisAngle(new THREE.Vector3(0,1,0), THREE.Math.degToRad(rot));
+    
+    // World Position of Shoulder Pivot
+    // From buildCompleteRobot: left arm group at (0.22, 0.45+0.4+0.15, 0) = (0.22, 1.0, 0)
+    const shoulderPos = new THREE.Vector3(0.22, 1.0, 0);
+    const worldPos = shoulderPos.clone().add(handOffset);
+    
+    // Update Line (From Shoulder to Hand Tip)
+    const positions = q1Line.geometry.attributes.position.array;
+    positions[0] = shoulderPos.x; positions[1] = shoulderPos.y; positions[2] = shoulderPos.z;
+    positions[3] = worldPos.x; positions[4] = worldPos.y; positions[5] = worldPos.z;
+    q1Line.geometry.attributes.position.needsUpdate = true;
+    
+    q1EndMesh.position.copy(worldPos);
+    
+    // Update UI Text
+    document.getElementById('q1-cur-ext').innerText = ext.toFixed(1) + "°";
+    document.getElementById('q1-cur-rot').innerText = rot.toFixed(1) + "°";
+    
+    const L = vizData.q1.L_arm;
+    const rExt = THREE.Math.degToRad(ext);
+    const rRot = THREE.Math.degToRad(rot);
+    const x1 = L * Math.cos(rExt);
+    const z1 = L * Math.sin(rExt);
+    const xf = x1 * Math.cos(rRot);
+    const yf = x1 * Math.sin(rRot);
+    const zf = z1;
+    
+    if(ext > 0) {
+        document.getElementById('q1-x').innerText = xf.toFixed(3);
+        document.getElementById('q1-y').innerText = yf.toFixed(3);
+        document.getElementById('q1-z').innerText = zf.toFixed(3);
+    }
+}
+
+function updateQ2() {
+    const data = vizData.q2;
+    const duration = data.T_opt;
+    const dt = clock.getDelta() * playbackSpeed;
+    
+    q2AnimTime = updateAnimationState(q2AnimTime, duration, dt);
+    
+    const progress = q2AnimTime / duration;
+    const idx = Math.floor(progress * (data.time.length - 1));
+    const angleDeg = data.angle[idx] || 0;
+    
+    if(robotQ2.rightKneeGroup) {
+        // Smooth interp
+        const nextIdx = Math.min(idx + 1, data.time.length - 1);
+        const t1 = data.time[idx], t2 = data.time[nextIdx];
+        const a1 = data.angle[idx], a2 = data.angle[nextIdx];
+        let subP = 0;
+        if(t2 > t1) subP = (q2AnimTime - t1) / (t2 - t1);
+        const smoothAngle = a1 + (a2 - a1) * subP;
+        
+        robotQ2.rightKneeGroup.rotation.x = THREE.Math.degToRad(smoothAngle);
+    }
+    
+    document.getElementById('q2-time-display').innerText = q2AnimTime.toFixed(2);
+    const nextIdx = Math.min(idx + 1, data.time.length - 1);
+    const vel = (data.angle[nextIdx] - data.angle[idx]) / (data.time[nextIdx] - data.time[idx]);
+    document.getElementById('q2-vel').innerText = isFinite(vel) ? vel.toFixed(1) : "0.0";
+}
+
+function updateQ3() {
+    const data = vizData.q3;
+    const duration = 10.0;
+    const dt = clock.getDelta() * playbackSpeed;
+    
+    q3AnimTime = updateAnimationState(q3AnimTime, duration, dt);
+    
+    const progress = q3AnimTime / duration;
+    const idx = Math.floor(progress * (data.time.length - 1));
+    
+    const yaw = data.body_yaw[idx];
+    const ax = data.arm_local.x[idx];
+    const ay = data.arm_local.y[idx];
+    const az = data.arm_local.z[idx];
+    
+    // Smooth Interpolation for Body Yaw
+    const nextIdx = Math.min(idx + 1, data.time.length - 1);
+    const yaw2 = data.body_yaw[nextIdx];
+    const subP = (q3AnimTime - data.time[idx]) / (data.time[nextIdx] - data.time[idx]) || 0;
+    const smoothYaw = yaw + (yaw2 - yaw) * subP;
+    
+    robotQ3.group.rotation.y = THREE.Math.degToRad(smoothYaw);
+    
+    // Smooth Arm Target
+    const ax2 = data.arm_local.x[nextIdx];
+    const ay2 = data.arm_local.y[nextIdx];
+    const az2 = data.arm_local.z[nextIdx];
+    
+    const smoothAx = ax + (ax2 - ax) * subP;
+    const smoothAy = ay + (ay2 - ay) * subP;
+    const smoothAz = az + (az2 - az) * subP;
+    
+    const targetLocal = new THREE.Vector3(smoothAy, smoothAz, smoothAx);
+    // Adjust for shoulder offset relative to robot origin
+    targetLocal.sub(new THREE.Vector3(-0.2, 0.6, 0));
+    robotQ3.leftArmGroup.lookAt(targetLocal);
+    
+    document.getElementById('q3-yaw').innerText = smoothYaw.toFixed(1) + "°";
+    document.getElementById('q3-phase').innerText = Math.floor(progress*100) + "%";
+}
+
+window.updateQ4Preference = function(val) {
+    const weightTime = 1 - (val / 100);
+    const weightEnergy = val / 100;
+    
+    const pareto = vizData.q4.pareto;
+    const times = pareto.map(p => p.x);
+    const energies = pareto.map(p => p.y);
+    const minT = Math.min(...times), maxT = Math.max(...times);
+    const minE = Math.min(...energies), maxE = Math.max(...energies);
+    
+    let bestIdx = 0;
+    let bestScore = Infinity;
+    
+    pareto.forEach((p, i) => {
+        const normT = (p.x - minT) / (maxT - minT);
+        const normE = (p.y - minE) / (maxE - minE);
+        const score = weightTime * normT + weightEnergy * normE;
+        if(score < bestScore) {
+            bestScore = score;
+            bestIdx = i;
+        }
+    });
+    
+    const best = pareto[bestIdx];
+    chartQ4.data.datasets[1].data = [{x: best.x, y: best.y}];
+    chartQ4.update();
+    
+    document.getElementById('q4-time').innerText = best.x.toFixed(2) + " s";
+    document.getElementById('q4-energy').innerText = best.y.toFixed(1) + " J";
+}
+
+function updateQ4Visuals() {
+    if(q4Group) {
+        q4Group.rotation.y += 0.005;
+        // Rotate inner torus differently
+        if(q4Group.children[1]) q4Group.children[1].rotation.x += 0.01;
+    }
+}
+
+window.togglePlay = function(qid) {
+    isPlaying = !isPlaying;
+}
+
+window.toggleReverse = function(qid) {
+    isReverse = !isReverse;
+}
+
+window.setSpeed = function(val, qid) {
+    playbackSpeed = parseFloat(val);
+    const id = currentTab + '-speed-val';
+    if(document.getElementById(id)) document.getElementById(id).innerText = val + "x";
+}
+window.resetQ1 = function() { q1AnimTime = 0; isPlaying = false; updateQ1Visuals(0,0); }
+window.resetQ2 = function() { q2AnimTime = 0; isPlaying = false; }
+window.resetQ3 = function() { q3AnimTime = 0; isPlaying = false; }
+
+// --- Charts ---
+function setupCharts() {
+    if(chartQ2) chartQ2.destroy();
+    if(chartQ3) chartQ3.destroy();
+    if(chartQ4) chartQ4.destroy();
+
+    const d2 = vizData.q2;
+    chartQ2 = new Chart(document.getElementById('chart-q2'), {
+        type: 'line',
+        data: {
+            labels: d2.time.map(t => t.toFixed(1)),
+            datasets: [{ label: 'Knee Angle', data: d2.angle, borderColor: '#e74c3c', pointRadius: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, animation: false }
+    });
+    
+    const d3 = vizData.q3;
+    chartQ3 = new Chart(document.getElementById('chart-q3'), {
+        type: 'line',
+        data: {
+            labels: d3.time.map(t => t.toFixed(1)),
+            datasets: [{ label: 'Body Yaw', data: d3.body_yaw, borderColor: '#2ecc71', pointRadius: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, animation: false }
+    });
+
+    const d4 = vizData.q4;
+    chartQ4 = new Chart(document.getElementById('chart-q4'), {
+        type: 'scatter',
+        data: {
+            datasets: [
+                { label: 'Solutions', data: d4.pareto.map(p=>({x:p.x,y:p.y})), backgroundColor: '#e74c3c' },
+                { label: 'Selected', data: [{x:d4.knee.x, y:d4.knee.y}], backgroundColor: '#3498db', pointRadius: 8, pointStyle: 'star' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { title: {display:true, text:'Time (s)'} },
+                y: { title: {display:true, text:'Energy (J)'} }
+            }
+        }
+    });
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    
+    if(currentTab === 'q1') updateQ1();
+    else if(currentTab === 'q2') updateQ2();
+    else if(currentTab === 'q3') updateQ3();
+    else if(currentTab === 'q4') updateQ4Visuals();
+    
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+init3D();
+</script>
+</body>
+</html>
