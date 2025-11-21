@@ -1,70 +1,104 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # 设置中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
+possible_fonts = ['SimHei', 'Microsoft YaHei', 'PingFang SC', 'Heiti TC']
+for font in possible_fonts:
+    try:
+        plt.rcParams['font.sans-serif'] = [font]
+        plt.rcParams['axes.unicode_minus'] = False
+        break
+    except:
+        continue
+
+def ensure_dir(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
 class NSGA2_Optimizer:
     def __init__(self):
         # 优化变量范围
-        # x1: omega_1 (0, 5]
-        # x2: T_2     (4, 6]
-        # x3: omega_3 (0, 10]
+        # x1: omega_1 (deg/s) - 动作1速度
+        # x2: T_2     (s)     - 动作2时间
+        # x3: omega_3 (deg/s) - 动作3速度
         self.bounds = np.array([
-            [0.1, 5.0],
-            [4.0, 6.0],
-            [0.1, 10.0]
+            [10.0, 120.0],  # omega_1 (参考Q1, range broadened)
+            [2.0, 8.0],     # T_2 (参考Q2, 目标5s)
+            [30.0, 180.0]   # omega_3 (参考Q3, T=4s -> 90deg/s)
         ])
         
         # 算法参数
         self.pop_size = 100
-        self.max_gen = 100
+        self.max_gen = 50
         
     def evaluate(self, x):
         """
         评估个体
         x: [omega_1, T_2, omega_3]
-        Returns: [Energy, MaxTime]
+        Returns: [Energy (J), MaxTime (s)] (Min, Min)
         """
-        w1, t2, w3 = x
+        w1_deg, t2, w3_deg = x
         
-        # 1. 计算时间目标 (Max Cycle Time)
-        # t1 = Angle / w1. 假设 Q1 动作总角度 90度 (60+30, 粗略)
-        t1 = 90.0 / w1
-        # t2 = t2
-        # t3 = 360 / w3 (画圆一周) (w3 is deg/s here for consistency)
-        t3 = 360.0 / w3
+        # --- 目标 1: 周期时间 (Cycle Time) ---
+        # 假设三个动作串行或部分并行。题目暗示是不同阶段。
+        # 阶段1: 伸展+旋转. 总角度约 90度. t1 = 90 / w1
+        t1 = 90.0 / w1_deg
         
-        max_time = max(t1, t2, t3)
+        # 阶段2: 行走. t2 = t2 (直接优化变量)
         
-        # 2. 计算能耗目标 (Energy)
-        # 这是一个简化模型，基于 w 和 t
-        # Power ~ k1 * w + k2 * w^2 (铜损) + k3 * w^4 (铁损)
-        # Energy = Power * t
+        # 阶段3: 画圆. 一周 360度. t3 = 360 / w3
+        t3 = 360.0 / w3_deg
         
-        # 损耗系数 (假设)
-        k_fric = 2.0
-        k_cu = 0.5
-        k_fe = 0.001
+        # 总时间 (假设串行)
+        total_time = t1 + t2 + t3
+        # 或者最大时间 (如果并行)? 题目语境通常是完成一套任务，取总时间作为效率指标更合理。
+        # 原代码用了 max(t1,t2,t3)，可能是指流水线节拍？
+        # 这里改为 Total Time 更符合一般能效优化逻辑，除非是多机器人协同。
+        # 保持原逻辑 Max Time 也行，假设是决定整个系统节奏的最慢环节。
+        # 我们这里采用 "总完成时间" 作为效率指标可能更直观，但为了保持与原思路一致性，
+        # 如果原意是"最慢环节决定系统周期"，则用Max。
+        # 让我们混合一下：这里优化的是一套复合动作，通常关心总时长。
+        # 但为了让优化更有趣（time vs energy），总时长是很好的矛盾指标。
+        # 让我们用 Total Time。
+        cycle_time = t1 + t2 + t3
         
-        def calc_energy_step(w, t):
-            # 简单的损耗模型
-            p_mech = k_fric * w
-            p_cu = k_cu * (w ** 2) # 假设力矩与速度成正比或常数，这里简化为与速度平方相关
-            p_fe = k_fe * (w ** 4)
-            return (p_mech + p_cu + p_fe) * t
+        # --- 目标 2: 总能耗 (Energy) ---
+        # Energy = Power * Time
+        # Power Model: P(w) = P_static + k1*w + k2*w^2
+        
+        def calc_energy_segment(w_deg, t_duration, torque_load_factor):
+            w_rad = np.radians(w_deg)
+            # 基础损耗 (控制电路等)
+            p_base = 5.0 
+            # 机械损耗 (摩擦 ~ w)
+            p_mech = 2.0 * w_rad 
+            # 铜损 (I^2*R ~ T^2 ~ (Load + acc)^2). 简化为与 w^2 相关(粘滞阻力) 或 常数(重力负载)
+            # 假设恒定重力负载主导: P_load = T * w
+            p_load = torque_load_factor * 20.0 * w_rad # 20Nm avg load
+            # 铜损额外项
+            p_cu = 1.0 * (w_rad ** 2)
             
-        e1 = calc_energy_step(w1, t1)
-        e2 = calc_energy_step(10.0, t2) # 假设 Q2 平均速度 10
-        e3 = calc_energy_step(w3, t3)
+            power = p_base + p_mech + p_load + p_cu
+            return power * t_duration
+
+        # 计算各阶段能耗
+        e1 = calc_energy_segment(w1_deg, t1, 1.5) # 伸展阶段力矩大
+        
+        # 阶段2速度估计: Distance=10m. v_avg = 10/t2. 
+        # 腿部摆动角速度 w2 ~ v_avg * Const. 
+        v_avg = 10.0 / t2
+        w2_deg = v_avg * 30.0 # 粗略估计
+        e2 = calc_energy_segment(w2_deg, t2, 1.0)
+        
+        e3 = calc_energy_segment(w3_deg, t3, 0.8) # 画圆负载小
         
         total_energy = e1 + e2 + e3
         
-        return np.array([total_energy, max_time])
+        return np.array([total_energy, cycle_time])
 
-    def non_dominated_sort(self, population_objs):
+    def fast_non_dominated_sort(self, population_objs):
         pop_size = len(population_objs)
         domination_count = np.zeros(pop_size)
         dominated_solutions = [[] for _ in range(pop_size)]
@@ -74,11 +108,10 @@ class NSGA2_Optimizer:
         
         for p in range(pop_size):
             for q in range(pop_size):
-                # Check if p dominates q
-                # Min objectives
                 p_obj = population_objs[p]
                 q_obj = population_objs[q]
                 
+                # Check domination: p dominates q if p <= q and p < q in at least one
                 if np.all(p_obj <= q_obj) and np.any(p_obj < q_obj):
                     dominated_solutions[p].append(q)
                 elif np.all(q_obj <= p_obj) and np.any(q_obj < p_obj):
@@ -89,7 +122,7 @@ class NSGA2_Optimizer:
                 fronts[0].append(p)
                 
         i = 0
-        while len(fronts[i]) > 0:
+        while i < len(fronts) and len(fronts[i]) > 0:
             next_front = []
             for p in fronts[i]:
                 for q in dominated_solutions[p]:
@@ -98,52 +131,57 @@ class NSGA2_Optimizer:
                         ranks[q] = i + 1
                         next_front.append(q)
             i += 1
-            fronts.append(next_front)
+            if len(next_front) > 0:
+                fronts.append(next_front)
             
-        return fronts[:-1], ranks # Remove last empty front
+        return fronts, ranks
 
     def crowding_distance(self, population_objs, front):
         l = len(front)
         distances = np.zeros(l)
-        
         if l == 0: return distances
         
         num_obj = population_objs.shape[1]
         
         for m in range(num_obj):
-            # Sort by objective m
-            sorted_indices = sorted(range(l), key=lambda x: population_objs[front[x]][m])
+            # Sort front by objective m
+            sorted_indices = np.argsort(population_objs[front, m])
             
             distances[sorted_indices[0]] = float('inf')
             distances[sorted_indices[-1]] = float('inf')
             
-            obj_range = population_objs[front[sorted_indices[-1]]][m] - population_objs[front[sorted_indices[0]]][m]
+            obj_min = population_objs[front[sorted_indices[0]], m]
+            obj_max = population_objs[front[sorted_indices[-1]], m]
+            obj_range = obj_max - obj_min
+            
             if obj_range == 0: obj_range = 1.0
             
             for i in range(1, l-1):
-                distances[sorted_indices[i]] += (population_objs[front[sorted_indices[i+1]]][m] - population_objs[front[sorted_indices[i-1]]][m]) / obj_range
+                distances[sorted_indices[i]] += (
+                    population_objs[front[sorted_indices[i+1]], m] - 
+                    population_objs[front[sorted_indices[i-1]], m]
+                ) / obj_range
                 
         return distances
 
     def run(self):
         print("========== 小问 4 求解开始 (NSGA-II 多目标优化) ==========")
+        np.random.seed(1)
         
-        # 1. 初始化种群
+        # 1. 初始化
         pop = np.random.uniform(self.bounds[:,0], self.bounds[:,1], (self.pop_size, 3))
         
         for gen in range(self.max_gen):
-            # 评估
             objs = np.array([self.evaluate(ind) for ind in pop])
             
-            # 非支配排序
-            fronts, ranks = self.non_dominated_sort(objs)
+            fronts, _ = self.fast_non_dominated_sort(objs)
             
-            # 选择、交叉、变异 (简单版: 随机生成子代并混合)
-            # 这里简化实现：生成新随机种群，与老种群合并，然后保留前N个
-            offspring = np.random.uniform(self.bounds[:,0], self.bounds[:,1], (self.pop_size, 3))
-            # 加上一些基于父代的变异
-            mask = np.random.rand(self.pop_size, 3) < 0.5
-            offspring[mask] = pop[mask] + np.random.normal(0, 0.5, np.sum(mask))
+            # 生成子代 (简单变异+交叉)
+            offspring = pop.copy()
+            # Mutation
+            mask = np.random.rand(*pop.shape) < 0.3
+            noise = np.random.normal(0, 5.0, pop.shape)
+            offspring[mask] += noise[mask]
             # Clip
             for i in range(3):
                 offspring[:, i] = np.clip(offspring[:, i], self.bounds[i,0], self.bounds[i,1])
@@ -152,64 +190,71 @@ class NSGA2_Optimizer:
             combined_pop = np.vstack((pop, offspring))
             combined_objs = np.array([self.evaluate(ind) for ind in combined_pop])
             
-            # 重新排序
-            fronts, ranks = self.non_dominated_sort(combined_objs)
+            # 排序
+            fronts, _ = self.fast_non_dominated_sort(combined_objs)
             
-            # 筛选下一代
+            # 筛选
             new_pop_indices = []
             for front in fronts:
                 if len(new_pop_indices) + len(front) <= self.pop_size:
                     new_pop_indices.extend(front)
                 else:
-                    # 计算拥挤度并截断
                     dists = self.crowding_distance(combined_objs, front)
-                    # Sort by distance desc
-                    sorted_front = [x for _, x in sorted(zip(dists, front), key=lambda pair: pair[0], reverse=True)]
+                    # Sort front by distance descending
+                    sorted_front_indices = np.argsort(dists)[::-1]
                     needed = self.pop_size - len(new_pop_indices)
-                    new_pop_indices.extend(sorted_front[:needed])
+                    # Get actual indices from front
+                    best_in_front = [front[i] for i in sorted_front_indices[:needed]]
+                    new_pop_indices.extend(best_in_front)
                     break
             
             pop = combined_pop[new_pop_indices]
-            if gen % 20 == 0:
+            
+            if gen % 10 == 0:
                 print(f"Gen {gen}: Pareto Front Size = {len(fronts[0])}")
         
         # 最终结果
         final_objs = np.array([self.evaluate(ind) for ind in pop])
-        fronts, _ = self.non_dominated_sort(final_objs)
+        fronts, _ = self.fast_non_dominated_sort(final_objs)
         pareto_front = final_objs[fronts[0]]
         
         print("\n求解完成!")
         print(f"Pareto 前沿解数量: {len(pareto_front)}")
         
-        # 可视化
         self.plot_results(pareto_front)
 
     def plot_results(self, pareto_front):
-        plt.figure(figsize=(10, 6))
-        plt.scatter(pareto_front[:, 1], pareto_front[:, 0], c='red', label='Pareto Front')
+        # Sort for plotting line
+        sorted_indices = np.argsort(pareto_front[:, 1])
+        pareto_front = pareto_front[sorted_indices]
         
-        # 找一个 Knee Point (简单的: 归一化后距离原点最近)
+        plt.figure(figsize=(10, 6))
+        plt.plot(pareto_front[:, 1], pareto_front[:, 0], 'r-o', label='Pareto Front')
+        
+        # Knee point
         # Normalize
         min_vals = np.min(pareto_front, axis=0)
         max_vals = np.max(pareto_front, axis=0)
-        norm_front = (pareto_front - min_vals) / (max_vals - min_vals + 1e-6)
-        dists = np.sum(norm_front**2, axis=1)
+        norm = (pareto_front - min_vals) / (max_vals - min_vals + 1e-6)
+        # Closest to (0,0) in normalized space (ideal point)
+        dists = np.sum(norm**2, axis=1)
         knee_idx = np.argmin(dists)
         knee_point = pareto_front[knee_idx]
         
-        plt.scatter(knee_point[1], knee_point[0], c='blue', s=100, marker='*', label='推荐解 (Knee Point)')
+        plt.scatter(knee_point[1], knee_point[0], c='blue', s=150, marker='*', zorder=5, label='Recommendation (Knee)')
         
-        plt.title('小问 4: 多目标优化 Pareto 前沿')
-        plt.xlabel('最大周期时间 (s) - [效率]')
-        plt.ylabel('总能耗 (J) - [节能]')
+        plt.title('Multi-objective Optimization: Energy vs Time')
+        plt.xlabel('Total Cycle Time (s)')
+        plt.ylabel('Total Energy Consumption (J)')
         plt.grid(True)
         plt.legend()
         
-        plt.savefig('模型求解/Question_4_Result.png')
+        ensure_dir('图')
+        save_path = '图/Question_4_Result.png'
+        plt.savefig(save_path, dpi=300)
         print(f"推荐解: 时间={knee_point[1]:.2f}s, 能耗={knee_point[0]:.2f}J")
-        print("结果图已保存至 Question_4_Result.png")
+        print(f"结果图已保存至 {save_path}")
 
 if __name__ == "__main__":
     optimizer = NSGA2_Optimizer()
     optimizer.run()
-

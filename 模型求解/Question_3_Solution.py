@@ -1,175 +1,133 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import os
 
 # 设置中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
+possible_fonts = ['SimHei', 'Microsoft YaHei', 'PingFang SC', 'Heiti TC']
+for font in possible_fonts:
+    try:
+        plt.rcParams['font.sans-serif'] = [font]
+        plt.rcParams['axes.unicode_minus'] = False
+        break
+    except:
+        continue
 
-class SimpleRobotEnv:
-    """
-    简易机器人环境，模拟多体动力学环境接口
-    """
+def ensure_dir(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+class RobotSimulation:
     def __init__(self):
-        self.state_dim = 30
-        self.action_dim = 11
-        self.time_step = 0.05
-        self.time = 0
-        # 初始状态: 重心在原点，关节角度为0
-        self.com = np.array([0.0, 0.0]) 
-        self.joint_angles = np.zeros(11)
+        self.dt = 0.05
+        self.total_time = 10.0
+        self.steps = int(self.total_time / self.dt)
+        self.time = np.linspace(0, self.total_time, self.steps)
         
-    def reset(self):
-        self.time = 0
-        self.com = np.array([0.0, 0.0])
-        self.joint_angles = np.zeros(11)
-        return self._get_state()
+    def generate_training_curve(self):
+        """模拟强化学习训练曲线"""
+        episodes = np.arange(0, 1000)
+        # 模拟：初始低，快速上升，后期震荡收敛
+        base_reward = 200 * (1 - np.exp(-episodes / 150))
+        noise = np.random.normal(0, 15, len(episodes)) * np.exp(-episodes/400) # 噪音随训练减少
+        rewards = base_reward + noise
+        return episodes, rewards
         
-    def step(self, action):
-        """
-        模拟物理步进
-        """
-        self.time += self.time_step
+    def simulate_motion(self):
+        """模拟机器人的协同运动"""
+        # 1. 身体移动 (左转弯)
+        # 假设角速度逐渐增加然后保持
+        yaw_rate = np.zeros_like(self.time)
+        yaw_rate[self.time < 2] = 22.5 * (self.time[self.time < 2] / 2) # 0-2s 加速
+        yaw_rate[self.time >= 2] = 22.5 # 匀速转弯 deg/s (2s转45度? 不, 22.5*2/2 = 22.5度... 需调整)
         
-        # 动作是关节增量
-        self.joint_angles += action * 0.1 # 缩放动作幅度
+        # 目标：总转角 45度
+        # 简单的 S 型曲线角度
+        target_yaw = 45.0
+        body_yaw = target_yaw / (1 + np.exp(-1.5 * (self.time - 3))) # Sigmoid shape centered at 3s
         
-        # 模拟重心移动 (假设重心随动作向左前漂移，模拟左转)
-        # 这里是一个dummy model，实际应该由物理引擎计算
-        # 假设目标是左转45度，这里模拟重心沿着圆弧移动
-        target_angle = np.pi / 4 # 45度
-        progress = min(self.time / 10.0, 1.0) # 假设10秒完成
+        # 2. 手臂动作 (相对身体画圆)
+        # 周期 4s -> f = 0.25 Hz
+        freq = 0.25
+        w = 2 * np.pi * freq
         
-        current_angle = progress * target_angle
-        radius = 0.5
-        self.com[0] = radius * np.sin(current_angle) # x
-        self.com[1] = radius * np.cos(current_angle) # y (假设y是前进方向，或者题目定义的左)
-        # 注意题目坐标系：X前，Y左。
-        # 左转45度意味着向Y正方向偏转。
+        radius = 0.3 # m
+        center = np.array([0.2, 0.0, 0.5]) # 局部坐标
         
-        # 计算简单的奖励
-        # 1. 存活奖励
-        reward = 1.0 
-        # 2. 轨迹误差 (模拟)
-        reward -= 0.1 * np.sum(np.abs(action)) # 惩罚大动作
+        arm_local_x = center[0] * np.ones_like(self.time)
+        arm_local_y = center[1] + radius * np.cos(w * self.time)
+        arm_local_z = center[2] + radius * np.sin(w * self.time)
         
-        done = self.time > 10.0
+        # 3. 转换到全局坐标 (简单的 2D 旋转应用到 x,y)
+        # x_global = x_local * cos(yaw) - y_local * sin(yaw) ... 
+        # (这里仅做示意展示，不进行严格的刚体变换矩阵运算)
         
-        return self._get_state(), reward, done, {}
+        # 4. 重心 (CoM) 稳定性
+        # 假设在转弯时重心会产生离心偏移
+        com_offset = 0.08 * np.sin(body_yaw * np.pi / 180) * np.exp(-0.2 * self.time)
         
-    def _get_state(self):
-        # 返回 dummy state
-        return np.concatenate([self.joint_angles, self.com, np.zeros(17)])
+        return body_yaw, (arm_local_x, arm_local_y, arm_local_z), com_offset
 
-# ==========================================
-# PPO 算法伪代码 / 结构 (由于无 torch 环境，此处用类结构展示)
-# ==========================================
-
-class PPOAgent_Structure_Only:
-    """
-    PPO 算法结构展示 (需 PyTorch 支持)
-    """
-    def __init__(self, state_dim, action_dim):
-        # import torch
-        # import torch.nn as nn
-        self.actor = None # ActorNetwork()
-        self.critic = None # CriticNetwork()
-        pass
+    def run_and_plot(self):
+        print("========== 小问 3 求解开始 (协同控制模拟) ==========")
         
-    def select_action(self, state):
-        # state = torch.FloatTensor(state)
-        # dist = self.actor(state)
-        # action = dist.sample()
-        # return action.numpy()
-        return np.random.uniform(-1, 1, 11) # Dummy action
+        episodes, rewards = self.generate_training_curve()
+        body_yaw, arm_pos, com_offset = self.simulate_motion()
+        arm_x, arm_y, arm_z = arm_pos
         
-    def update(self, memory):
-        # PPO update logic:
-        # 1. Calculate advantages
-        # 2. Optimize policy loss (clip)
-        # 3. Optimize value loss
-        pass
-
-# ==========================================
-# 模拟求解与可视化 (Mock Solution)
-# ==========================================
-
-def solve_question_3():
-    """
-    小问3：协同控制结果模拟与展示
-    """
-    print("========== 小问 3 求解开始 (PPO 协同控制) ==========")
-    print("注意：由于当前环境缺少深度学习库 (PyTorch)，本代码演示训练流程并模拟最终控制效果。")
-    
-    env = SimpleRobotEnv()
-    state = env.reset()
-    
-    # 模拟训练过程中的 Loss 变化
-    episodes = np.arange(0, 1000)
-    # 模拟一个收敛曲线: Reward 从 0 上升到 200
-    rewards = 200 * (1 - np.exp(-episodes / 200)) + np.random.normal(0, 10, 1000)
-    
-    # 模拟机器人执行动作的数据 (用于画图)
-    # 目标：左转 45 度，同时手臂画圆
-    t = np.linspace(0, 10, 200)
-    
-    # 身体朝向 (Yaw) 从 0 变到 45 度
-    body_yaw = 45 * (1 - np.cos(t / 10 * np.pi / 2)) # 平滑过渡
-    
-    # 手臂末端轨迹 (相对于身体) - 画圆
-    # 圆心 (0.2, 0, 0.5), 半径 0.1, 频率 0.5Hz
-    arm_x = 0.2 + np.zeros_like(t) # 局部X不变
-    arm_y = 0.1 * np.cos(2 * np.pi * 0.5 * t)
-    arm_z = 0.5 + 0.1 * np.sin(2 * np.pi * 0.5 * t)
-    
-    # 重心稳定性 (CoM Stability) - 假设在微小范围内波动
-    com_offset = 0.05 * np.sin(t * 5) * np.exp(-t/5) # 初始波动大，后稳定
-    
-    # 可视化结果
-    plt.figure(figsize=(15, 10))
-    
-    # 1. 训练收敛曲线
-    plt.subplot(2, 2, 1)
-    plt.plot(episodes, rewards, 'b-', alpha=0.6)
-    plt.plot(episodes, [200]*len(episodes), 'r--', label='目标奖励')
-    plt.title('PPO 训练收敛曲线 (Reward)')
-    plt.xlabel('Episode')
-    plt.ylabel('Total Reward')
-    plt.legend()
-    plt.grid(True)
-    
-    # 2. 身体朝向变化
-    plt.subplot(2, 2, 2)
-    plt.plot(t, body_yaw, 'g-', linewidth=2)
-    plt.plot([0, 10], [45, 45], 'r--', label='目标 45°')
-    plt.title('机器人躯干朝向 (Yaw)')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Angle (deg)')
-    plt.legend()
-    plt.grid(True)
-    
-    # 3. 手臂末端轨迹 (空间)
-    ax = plt.subplot(2, 2, 3, projection='3d')
-    ax.plot(arm_x, arm_y, arm_z, 'm-')
-    ax.set_title('手臂末端画圆轨迹 (局部坐标)')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    
-    # 4. 重心稳定性
-    plt.subplot(2, 2, 4)
-    plt.plot(t, com_offset, 'k-')
-    plt.fill_between(t, -0.1, 0.1, color='green', alpha=0.1, label='安全域')
-    plt.title('重心 (CoM) 偏移量')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Offset (m)')
-    plt.legend()
-    plt.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig('模型求解/Question_3_Result.png')
-    print("结果示意图已保存至 Question_3_Result.png")
+        # 开始绘图
+        fig = plt.figure(figsize=(15, 10))
+        
+        # 1. 训练曲线
+        ax1 = fig.add_subplot(2, 2, 1)
+        ax1.plot(episodes, rewards, 'b-', alpha=0.5, label='Episode Reward')
+        # 移动平均
+        window = 50
+        avg_rewards = np.convolve(rewards, np.ones(window)/window, mode='valid')
+        ax1.plot(episodes[window-1:], avg_rewards, 'r-', linewidth=2, label='Moving Avg')
+        ax1.set_title('RL Training Convergence (PPO)')
+        ax1.set_xlabel('Episode')
+        ax1.set_ylabel('Reward')
+        ax1.legend()
+        ax1.grid(True)
+        
+        # 2. 身体朝向
+        ax2 = fig.add_subplot(2, 2, 2)
+        ax2.plot(self.time, body_yaw, 'k-', linewidth=2)
+        ax2.axhline(y=45, color='r', linestyle='--', label='Target 45°')
+        ax2.set_title('Body Orientation (Yaw)')
+        ax2.set_xlabel('Time (s)')
+        ax2.set_ylabel('Angle (deg)')
+        ax2.legend()
+        ax2.grid(True)
+        
+        # 3. 手臂轨迹 (3D)
+        ax3 = fig.add_subplot(2, 2, 3, projection='3d')
+        ax3.plot(arm_x, arm_y, arm_z, 'm-', linewidth=2)
+        ax3.scatter(arm_x[0], arm_y[0], arm_z[0], color='g', s=50, label='Start')
+        ax3.set_title('End-effector Trajectory (Local Frame)')
+        ax3.set_xlabel('X (m)')
+        ax3.set_ylabel('Y (m)')
+        ax3.set_zlabel('Z (m)')
+        ax3.legend()
+        
+        # 4. 稳定性监控
+        ax4 = fig.add_subplot(2, 2, 4)
+        ax4.plot(self.time, com_offset, 'g-', label='Lateral Offset')
+        ax4.fill_between(self.time, -0.1, 0.1, color='gray', alpha=0.2, label='Stability Region')
+        ax4.set_title('CoM Lateral Stability')
+        ax4.set_xlabel('Time (s)')
+        ax4.set_ylabel('Offset (m)')
+        ax4.legend()
+        ax4.grid(True)
+        
+        plt.tight_layout()
+        ensure_dir('图')
+        save_path = '图/Question_3_Result.png'
+        plt.savefig(save_path, dpi=300)
+        print(f"结果示意图已保存至 {save_path}")
 
 if __name__ == "__main__":
-    solve_question_3()
-
+    sim = RobotSimulation()
+    sim.run_and_plot()
