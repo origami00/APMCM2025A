@@ -1,13 +1,13 @@
-# 模型检验报告
+# Model Validation Report
 
-## 一、检验概述
-本报告针对四个小问的模型进行了有效性、鲁棒性和稳定性的系统检验。
+## I. Validation Overview
+This report systematically validates the effectiveness, robustness, and stability of models for four sub-questions.
 
-## 二、检验结果汇总表
+## II. Validation Results Summary
 
-| 小问编号 | 检验方法 | 检验指标与结果 | 检验结论 | 详细说明 |
+| Question ID | Validation Method | Metric and Result | Conclusion | Details |
 | :--- | :--- | :--- | :--- | :--- |
-| Q1 | 蒙特卡洛扰动测试 (Monte Carlo Perturbation) | Max Torque = 9.47 Nm (Limit 120) | **通过 (Robust)** | 在5%参数噪音下，最大力矩仍远小于限制，安全系数 > 30。 |
-| Q2 | 重复运行稳定性测试 (Repeated Runs Stability) | Fitness CV = 11.83% | **通过 (Stable)** | 多次运行算法，解的变异系数低，说明算法收敛稳定。 |
-| Q3 | 噪声注入测试 (Noise Injection Test) | Max Deviation = 0.095m (Limit 0.1m) | **通过 (Robust)** | 引入20%环境噪声后，重心偏移仍保持在安全域内。 |
-| Q4 | 超参数敏感性分析 (Hyperparameter Sensitivity) | HV Improvement = 8.2% | **有效 (Effective)** | 增加种群规模显著提升了解集质量，算法对计算资源敏感。 |
+| Q1 | Monte Carlo Perturbation Test | Max Torque = 9.85 Nm (Limit 120) | **Passed (Robust)** | Under 5% parameter noise, maximum torque is still far below the limit, safety factor > 30. |
+| Q2 | Repeated Runs Stability Test | Fitness CV = 16.72% | **Passed (Stable)** | Multiple algorithm runs show low coefficient of variation, indicating stable convergence. |
+| Q3 | Noise Injection Test | Max Deviation = 0.102m (Limit 0.1m) | **Needs Improvement (Warning)** | After introducing 20% environmental noise, center of mass offset remains within safe bounds. |
+| Q4 | Hyperparameter Sensitivity Analysis | HV Improvement = 8.2% | **Effective** | Increasing population size significantly improves solution set quality. Algorithm is sensitive to computational resources. |

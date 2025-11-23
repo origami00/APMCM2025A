@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# 设置中文字体
-possible_fonts = ['SimHei', 'Microsoft YaHei', 'PingFang SC', 'Heiti TC']
+# Set fonts
+possible_fonts = ['Arial', 'Helvetica', 'DejaVu Sans', 'sans-serif']
 for font in possible_fonts:
     try:
         plt.rcParams['font.sans-serif'] = [font]
@@ -19,80 +19,70 @@ def ensure_dir(directory):
 
 class NSGA2_Optimizer:
     def __init__(self):
-        # 优化变量范围
-        # x1: omega_1 (deg/s) - 动作1速度
-        # x2: T_2     (s)     - 动作2时间
-        # x3: omega_3 (deg/s) - 动作3速度
+        # Optimization Variable Ranges
+        # x1: omega_1 (deg/s) - Action 1 Velocity
+        # x2: T_2     (s)     - Action 2 Time
+        # x3: omega_3 (deg/s) - Action 3 Velocity
         self.bounds = np.array([
-            [10.0, 120.0],  # omega_1 (参考Q1, range broadened)
-            [2.0, 8.0],     # T_2 (参考Q2, 目标5s)
-            [30.0, 180.0]   # omega_3 (参考Q3, T=4s -> 90deg/s)
+            [10.0, 120.0],  # omega_1 (Ref Q1, range broadened)
+            [2.0, 8.0],     # T_2 (Ref Q2, target 5s)
+            [30.0, 180.0]   # omega_3 (Ref Q3, T=4s -> 90deg/s)
         ])
         
-        # 算法参数
+        # Algorithm Parameters
         self.pop_size = 100
         self.max_gen = 50
         
     def evaluate(self, x):
         """
-        评估个体
+        Evaluate Individual
         x: [omega_1, T_2, omega_3]
         Returns: [Energy (J), MaxTime (s)] (Min, Min)
         """
         w1_deg, t2, w3_deg = x
         
-        # --- 目标 1: 周期时间 (Cycle Time) ---
-        # 假设三个动作串行或部分并行。题目暗示是不同阶段。
-        # 阶段1: 伸展+旋转. 总角度约 90度. t1 = 90 / w1
+        # --- Objective 1: Cycle Time ---
+        # Assume three actions serial or partial parallel. Problem implies different phases.
+        # Phase 1: Extension+Rotation. Total angle approx 90 deg. t1 = 90 / w1
         t1 = 90.0 / w1_deg
         
-        # 阶段2: 行走. t2 = t2 (直接优化变量)
+        # Phase 2: Walking. t2 = t2 (Direct optim variable)
         
-        # 阶段3: 画圆. 一周 360度. t3 = 360 / w3
+        # Phase 3: Circling. One cycle 360 deg. t3 = 360 / w3
         t3 = 360.0 / w3_deg
         
-        # 总时间 (假设串行)
-        total_time = t1 + t2 + t3
-        # 或者最大时间 (如果并行)? 题目语境通常是完成一套任务，取总时间作为效率指标更合理。
-        # 原代码用了 max(t1,t2,t3)，可能是指流水线节拍？
-        # 这里改为 Total Time 更符合一般能效优化逻辑，除非是多机器人协同。
-        # 保持原逻辑 Max Time 也行，假设是决定整个系统节奏的最慢环节。
-        # 我们这里采用 "总完成时间" 作为效率指标可能更直观，但为了保持与原思路一致性，
-        # 如果原意是"最慢环节决定系统周期"，则用Max。
-        # 让我们混合一下：这里优化的是一套复合动作，通常关心总时长。
-        # 但为了让优化更有趣（time vs energy），总时长是很好的矛盾指标。
-        # 让我们用 Total Time。
+        # Total Time (Assume Serial)
         cycle_time = t1 + t2 + t3
         
-        # --- 目标 2: 总能耗 (Energy) ---
+        # --- Objective 2: Total Energy ---
         # Energy = Power * Time
         # Power Model: P(w) = P_static + k1*w + k2*w^2
         
         def calc_energy_segment(w_deg, t_duration, torque_load_factor):
             w_rad = np.radians(w_deg)
-            # 基础损耗 (控制电路等)
+            # Base Loss (Control circuits etc.)
             p_base = 5.0 
-            # 机械损耗 (摩擦 ~ w)
+            # Mechanical Loss (Friction ~ w)
             p_mech = 2.0 * w_rad 
-            # 铜损 (I^2*R ~ T^2 ~ (Load + acc)^2). 简化为与 w^2 相关(粘滞阻力) 或 常数(重力负载)
-            # 假设恒定重力负载主导: P_load = T * w
+            # Copper Loss (I^2*R ~ T^2 ~ (Load + acc)^2). Simplified as related to w^2 (viscous) or constant (gravity)
+            # Assume constant gravity load dominant: P_load = T * w
             p_load = torque_load_factor * 20.0 * w_rad # 20Nm avg load
-            # 铜损额外项
+            # Extra Copper Loss Term
             p_cu = 1.0 * (w_rad ** 2)
             
             power = p_base + p_mech + p_load + p_cu
             return power * t_duration
 
-        # 计算各阶段能耗
-        e1 = calc_energy_segment(w1_deg, t1, 1.5) # 伸展阶段力矩大
+        # Calculate energy for each phase
+        e1 = calc_energy_segment(w1_deg, t1, 1.5) # High torque during extension
         
-        # 阶段2速度估计: Distance=10m. v_avg = 10/t2. 
-        # 腿部摆动角速度 w2 ~ v_avg * Const. 
+        # Phase 2 Velocity Estimation: Distance=10m. v_avg = 10/t2. 
+        # Leg Swing Angular Velocity w2 ~ v_avg * Const. 
         v_avg = 10.0 / t2
-        w2_deg = v_avg * 30.0 # 粗略估计
+        w2_deg = v_avg * 30.0 # Rough Estimate
         e2 = calc_energy_segment(w2_deg, t2, 1.0)
         
-        e3 = calc_energy_segment(w3_deg, t3, 0.8) # 画圆负载小
+        e3 = calc_energy_segment(w3_deg, t3, 0.8) # Low load during circling
         
         total_energy = e1 + e2 + e3
         
@@ -165,10 +155,10 @@ class NSGA2_Optimizer:
         return distances
 
     def run(self):
-        print("========== 小问 4 求解开始 (NSGA-II 多目标优化) ==========")
+        print("========== Question 4 Solution Start (NSGA-II Multi-objective Optimization) ==========")
         np.random.seed(1)
         
-        # 1. 初始化
+        # 1. Initialization
         pop = np.random.uniform(self.bounds[:,0], self.bounds[:,1], (self.pop_size, 3))
         
         for gen in range(self.max_gen):
@@ -176,7 +166,7 @@ class NSGA2_Optimizer:
             
             fronts, _ = self.fast_non_dominated_sort(objs)
             
-            # 生成子代 (简单变异+交叉)
+            # Generate Offspring (Simple Mutation + Crossover)
             offspring = pop.copy()
             # Mutation
             mask = np.random.rand(*pop.shape) < 0.3
@@ -186,14 +176,14 @@ class NSGA2_Optimizer:
             for i in range(3):
                 offspring[:, i] = np.clip(offspring[:, i], self.bounds[i,0], self.bounds[i,1])
             
-            # 合并
+            # Merge
             combined_pop = np.vstack((pop, offspring))
             combined_objs = np.array([self.evaluate(ind) for ind in combined_pop])
             
-            # 排序
+            # Sort
             fronts, _ = self.fast_non_dominated_sort(combined_objs)
             
-            # 筛选
+            # Select
             new_pop_indices = []
             for front in fronts:
                 if len(new_pop_indices) + len(front) <= self.pop_size:
@@ -213,13 +203,13 @@ class NSGA2_Optimizer:
             if gen % 10 == 0:
                 print(f"Gen {gen}: Pareto Front Size = {len(fronts[0])}")
         
-        # 最终结果
+        # Final Results
         final_objs = np.array([self.evaluate(ind) for ind in pop])
         fronts, _ = self.fast_non_dominated_sort(final_objs)
         pareto_front = final_objs[fronts[0]]
         
-        print("\n求解完成!")
-        print(f"Pareto 前沿解数量: {len(pareto_front)}")
+        print("\nSolution Completed!")
+        print(f"Number of Pareto Front Solutions: {len(pareto_front)}")
         
         self.plot_results(pareto_front)
 
@@ -249,7 +239,7 @@ class NSGA2_Optimizer:
         plt.grid(True)
         plt.legend()
         
-        # 添加结论文本
+        # Add conclusion text
         conclusion_text = f"Conclusion: Recommended (Knee Point) - Time {knee_point[1]:.2f}s, Energy {knee_point[0]:.2f}J.\nTrade-off between efficiency and energy (Pareto Optimal)."
         plt.figtext(0.5, 0.02, conclusion_text, ha='center', fontsize=12, 
                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
@@ -258,8 +248,8 @@ class NSGA2_Optimizer:
         ensure_dir('图')
         save_path = '图/Question_4_Result.png'
         plt.savefig(save_path, dpi=300)
-        print(f"推荐解: 时间={knee_point[1]:.2f}s, 能耗={knee_point[0]:.2f}J")
-        print(f"结果图已保存至 {save_path}")
+        print(f"Recommended Solution: Time={knee_point[1]:.2f}s, Energy={knee_point[0]:.2f}J")
+        print(f"Result plot saved to {save_path}")
 
 if __name__ == "__main__":
     optimizer = NSGA2_Optimizer()
